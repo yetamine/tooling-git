@@ -1,0 +1,100 @@
+#!/bin/bash
+#|
+#| Finds all Git repositories in the given directory tree and optionally executes
+#| the given actions on them.
+#|
+#| Usage:
+#|
+#| git-ext-each [OPTION...] [-- FIND_MORE]
+#|
+#| Options:
+#|   -a, --after        use the default action after FIND_MORE applied
+#|   -b, --before       use the default action before FIND_MORE applied
+#|   -h, --help         show this help and exit
+#|   -p, --parent       remain in the parent directory to FIND_MORE
+#|   -r, --root DIR     starts the search in DIR (default: .)
+#|
+#| Arguments:
+#|   FIND_MORE          additional predicates for 'find'
+#|
+#| If FIND_MORE is missing, the default action prints the repository directory.
+#| Otherwise FIND_MORE actions are applied, e.g., the following example prints
+#| repositories that contain a pom.xml file only:
+#|
+#| git-ext-each -a -- -execdir test -f pom.xml \;
+
+AFTER=0
+BEFORE=0
+PARENT=0
+ROOT='.'
+
+SCRIPT_FILE="${BASH_SOURCE[0]}"
+while [[ -n "$1" ]]; do
+    case "$1" in
+    -a|--after)
+        AFTER=1
+        shift
+        ;;
+
+    -b|--before)
+        BEFORE=1
+        shift
+        ;;
+
+    -h|--help)
+        sed '/#|.*/ s/^#|[[:space:]]\?//p;d' < "$SCRIPT_FILE"
+        exit 1
+        ;;
+
+    -p|--parent)
+        PARENT=1
+        shift
+        ;;
+
+    -r|--root)
+        ROOT="$2"
+        shift 2
+        ;;
+
+    --)
+        shift
+        break
+        ;;
+
+    -*)
+        echo "Unknown option encountered: '$1'" >&2
+        exit 1
+        ;;
+
+    *)
+        break
+        ;;
+    esac
+done
+
+if [[ $PARENT -ne 0 ]]; then
+    DEFAULT_PRINT="-print"
+else
+    DEFAULT_PRINT="-printf %h\n"
+fi
+
+AFTER_PRINT=
+BEFORE_PRINT=
+if [[ $AFTER -ne 0 ]]; then
+    AFTER_PRINT=$DEFAULT_PRINT
+fi
+if [[ $BEFORE -ne 0 ]]; then
+    BEFORE_PRINT=$DEFAULT_PRINT
+fi
+
+if [[ $# -ne 0 ]]; then
+    ACTION="$@"
+else
+    ACTION=$DEFAULT_PRINT
+fi
+
+if [[ $PARENT -ne 0 ]]; then
+    find -L -- "$ROOT" -type d -execdir test -d {}/.git \; -prune $BEFORE_PRINT $ACTION $AFTER_PRINT
+else
+    find -L -- "$ROOT" -type d -iname '.git' -prune $BEFORE_PRINT $ACTION $AFTER_PRINT
+fi

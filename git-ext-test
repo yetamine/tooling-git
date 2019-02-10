@@ -1,0 +1,164 @@
+#!/bin/bash
+#|
+#| Tests a Git repository for various conditions and acts as a test or a filter.
+#|
+#| Usage:
+#|
+#| git-ext-test [OPTION...] [--] [TEST]
+#|
+#| Options:
+#|   -d, --dir DIR      the directory where the test should be executed. If not
+#|                      given, a whole list of directories is read from STDIN
+#|   -h, --help         show this help and exit
+#|   -n, --not          return 0 if the TEST returned 1
+#|   -s, --silent       suppress printing the name of the directory
+#|
+#| Arguments:
+#|   TEST               the test to apply, see the details below
+#|
+#| Returns:
+#|   0                  if the test has been passed
+#|   1                  if the test failed
+#|   2                  if the test command failed
+#|
+#| Tests:
+#|   at-branch BRANCH   tests if HEAD points to the given BRANCH
+#|   has-branch GLOB... tests if the repository has a local branch that matches
+#|                      the given GLOB pattern
+#|   is-clean           tests if the repository is as clean as it should be after
+#|                      checking out
+#|
+#| If no TEST is specified, the command returns 0 or 1, depending on --not.
+
+EX_TRUE=0
+EX_FALSE=1
+EX_ERROR=2
+
+DIR=
+NOT=0
+SILENT=0
+
+RECURSIVE_ARGS=
+
+SCRIPT_FILE="${BASH_SOURCE[0]}"
+while [[ -n "$1" ]]; do
+    case "$1" in
+    -d|--dir)
+        DIR="$2"
+        shift 2
+        ;;
+
+    -h|--help)
+        sed '/#|.*/ s/^#|[[:space:]]\?//p;d' < "$SCRIPT_FILE"
+        exit $EX_ERROR
+        ;;
+
+    -n|--not)
+        RECURSIVE_ARGS+=' --not'
+        NOT=1
+        shift
+        ;;
+
+    -s|--silent)
+        RECURSIVE_ARGS+=' --silent'
+        SILENT=1
+        shift
+        ;;
+
+    --)
+        RECURSIVE_ARGS+=' --'
+        shift
+        break
+        ;;
+
+    -*)
+        echo "Unknown option encountered: '$1'" >&2
+        exit $EX_ERROR
+        ;;
+
+    *)
+        break
+        ;;
+    esac
+done
+
+if [[ -z "$1" ]]; then
+    exit $NOT # See the equality to EX_*
+fi
+
+if [[ -z "$DIR" ]]; then
+    RESULT=$EX_TRUE
+    while read -r DIR; do
+        "$SCRIPT_FILE" $RECURSIVE_ARGS -d "$DIR" "$@"
+        EXIT=$?
+        if [[ $EXIT -gt $RESULT ]]; then
+            RESULT=$EXIT
+        fi
+    done
+        exit $RESULT
+else
+    cd "$DIR"
+fi
+
+RESULT=$EX_FALSE
+case "$1" in
+    at-branch)
+        BRANCH=`git rev-parse --abbrev-ref HEAD`
+        if [[ $? -ne 0 ]]; then
+            exit $EX_ERROR
+        fi
+
+        if [[ "$BRANCH" == "$2" ]]; then
+            RESULT=$EX_TRUE
+        fi
+        ;;
+
+    has-branch)
+        shift
+        BRANCHES=`git branch --list --format '%(refname)' "$@"`
+        if [[ $? -ne 0 ]]; then
+            exit $EX_ERROR
+        fi
+
+        if [[ -n "$BRANCHES" ]]; then
+            RESULT=$EX_TRUE
+        fi
+        ;;
+
+    is-clean)
+        STATUS=`git status --porcelain`
+        if [[ $? -ne 0 ]]; then
+            exit $EX_ERROR
+        fi
+
+        if [[ -z "$STATUS" ]]; then
+            RESULT=$EX_TRUE
+        fi
+        ;;
+
+    *)
+        echo "Unknown test encountered: '$1'" >&2
+        exit $EX_ERROR
+        ;;
+esac
+
+if [[ $RESULT -eq $EX_ERROR ]]; then
+    exit $EX_ERROR
+fi
+
+if [[ $NOT -ne 0 ]]; then
+    if [[ $RESULT -eq $EX_TRUE ]]; then
+        exit $EX_FALSE
+    else
+        if [[ $SILENT -eq 0 ]]; then
+            echo "$DIR"
+        fi
+        exit $EX_TRUE
+    fi
+fi
+
+if [[ $RESULT -eq $EX_TRUE && $SILENT -eq 0 ]]; then
+    echo "$DIR"
+fi
+
+exit $RESULT
