@@ -1,0 +1,13 @@
+# Derived artifacts
+*.pyo
+*.pyc
+
+# Mac
+.DS_Store
+
+# Eclipse
+.metadata/
+.settings/
+.classpath
+.project
+.pydevproject
