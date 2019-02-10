@@ -1,0 +1,202 @@
+#!/bin/bash
+#|
+#| Initializes a Git repository according to a template.
+#|
+#| * Makes an empty root commit, which can be useful for merging or splitting
+#|   whole repositories or separate trees.
+#| * Applies the given template, which may define custom steps and/or commonly
+#|   present files (e.g., .gitignore, licenses or README).
+#| * Adds .gitignore, .gitattributes and README.md if provided.
+#| * Prints the hints how to proceed then.
+#|
+#| Usage:
+#|
+#| git-ext-init [-h] | [-e] [-t TEMPLATE] [[-r REMOTE] -u URL] [DIR]
+#|
+#| Options:
+#|   -e, --edit                 edit the configuration files
+#|   -h, --help                 show this help and exit
+#|   -r, --remote NAME          the NAME for the remote (default: origin)
+#|   -t, --template TEMPLATE    the TEMPLATE to apply
+#|   -u, --url URL              add URL for the given remote
+#|
+#| Arguments:
+#|   DIR                        the directory of the repository (default: .)
+#|
+#| If DIR does not exist, the path is created (including necessary parent
+#| directories).
+#|
+#| TEMPLATE refers to the name of the directory containing the template to apply.
+#| The template has following structure:
+#|
+#|   {template}/
+#|       resources/
+#|       prepare
+#|       finish
+#|
+#| The template is applied by following steps:
+#|   1. Execute 'prepare'.
+#|   2. Copy the content of 'resources/' to the root of the repository.
+#|   3. Execute 'finish'.
+#|
+#| If any item is missing, the step is skipped. The commands are executed in the
+#| the repository directory and they are supposed to perform adjustments and any
+#| other suitable actions for the initialization.
+#|
+#| The TEMPLATE is searched in '~/.config/git/ext/init/templates/' and if not
+#| found there, then in 'templates/' subdirectory of this command's directory.
+
+FORCE_EDIT=0
+REMOTE_NAME=origin
+REMOTE_URL=
+TEMPLATE=
+
+SCRIPT_FILE="${BASH_SOURCE[0]}"
+while [[ -n "$1" ]]; do
+    case "$1" in
+    -h|--help)
+        sed '/#|.*/ s/^#|[[:space:]]\?//p;d' < "$SCRIPT_FILE"
+        exit 1
+        ;;
+
+    -e|--edit)
+        FORCE_EDIT=1
+        shift
+        ;;
+
+    -r|--remote)
+        REMOTE_NAME="$2"
+        shift 2
+        ;;
+
+    -t|--template)
+        TEMPLATE="$2"
+        shift 2
+        ;;
+
+    -u|--url)
+        REMOTE_URL="$2"
+        shift 2
+        ;;
+
+    --)
+        shift
+        break
+        ;;
+
+    -*)
+        echo "Unknown option encountered: '$1'" >&2
+        exit 1
+        ;;
+
+    *)
+        break
+        ;;
+    esac
+done
+
+
+# Preliminary sanity checks
+
+DIR="${1:-.}"
+if [[ -d "$DIR/.git" ]]; then
+    echo "The repository already exists. Aborting." >&2
+    exit 2
+fi
+
+if [[ -n "$TEMPLATE" ]]; then
+    TEMPLATE_DIR="~/.config/git/ext/init/templates/$TEMPLATE"
+    if ! [[ -d "$TEMPLATE_DIR" ]]; then
+        TEMPLATE_DIR=`dirname "$SCRIPT_FILE"`"/templates/$TEMPLATE"
+        if ! [[ -d "$TEMPLATE_DIR" ]]; then
+            echo "Could not locate given template '$TEMPLATE'." >&2
+            exit 2
+        fi
+    fi
+fi
+
+
+# Finish the script preparation steps
+
+if [[ -z "$EDITOR" ]]; then
+    EDITOR=vim
+fi
+
+
+# Start the actual process
+
+if [[ "$DIR" != '.' ]]; then
+    echo ":: Switching to $DIR"
+    mkdir -p "$DIR"
+    cd "$DIR"
+fi
+
+echo ":: Setting up repository"
+git init
+
+if [[ -n "$REMOTE_URL" ]]; then
+    echo "Setting remote"
+    git remote add "$REMOTE_NAME" "$REMOTE_URL"
+fi
+
+echo ":: Review the configuration"
+git config --list
+
+if [[ $FORCE_EDIT -ne 0 ]]; then
+    git config --edit
+fi
+
+echo ":: Setting up the root commit"
+git commit --allow-empty -m "Make the root commit"
+git tag ROOT
+
+
+if [[ -n "$TEMPLATE" ]]; then
+    echo ":: Applying template '$TEMPLATE'"
+    TEMPLATE_RESOURCES="$TEMPLATE_DIR/resources"
+    test -d "$TEMPLATE_RESOURCES" && cp -R "$TEMPLATE_RESOURCES/." .
+    TEMPLATE_COMMAND="$TEMPLATE_DIR/prepare"
+    test -f  "$TEMPLATE_COMMAND" && "$TEMPLATE_COMMAND"
+fi
+
+echo ":: Adding .gitignore"
+if [[ -z "$TEMPLATE" || $FORCE_EDIT -ne 0 ]]; then
+    "$EDITOR" .gitignore
+fi
+if [[ -f .gitignore ]]; then
+    git add .gitignore
+    git commit -m "Add .gitignore"
+fi
+
+echo ":: Adding .gitattributes"
+if [[ -z "$TEMPLATE" || $FORCE_EDIT -ne 0 ]]; then
+    "$EDITOR" .gitattributes
+fi
+if [[ -f .gitattributes ]]; then
+    git add .gitattributes
+    git commit -m "Add .gitattributes"
+fi
+
+if [[ -f README.md ]]; then
+    echo ":: Preparing README.md"
+    "$EDITOR" README.md
+    git add README.md
+    git commit -m "Add README.md"
+fi
+
+if [[ -n "$TEMPLATE" ]]; then
+    TEMPLATE_COMMAND="$TEMPLATE_DIR/finish"
+    test -f  "$TEMPLATE_COMMAND" && "$TEMPLATE_COMMAND"
+fi
+
+echo ":: Finishing"
+echo
+echo "Keep good work:"
+echo
+echo "* Add a skeleton of the project that passes the build"
+echo "* Update documentation accordingly"
+echo "* Commit the skeleton"
+echo "* Supply the rest :-)"
+echo
+echo "Happy coding!"
+echo
