@@ -26,7 +26,7 @@
 #| git-ext-each | git-ext-exec git pull
 
 BREAK=0
-DIRS=/dev/stdin
+DIRS=-
 EXEC=
 VERBOSE=0
 
@@ -86,7 +86,7 @@ fi
 echo '#!'"$SHELL"               >  "$SCRIPT"
 echo 'shopt -s expand_aliases'  >> "$SCRIPT"
 
-while read DIR < "$DIRS"; do
+cat "$DIRS" | while read DIR; do
     if [[ $VERBOSE -ne 0 ]]; then
         echo 'echo '"$DIR"' >&2' >> "$SCRIPT"
     fi
