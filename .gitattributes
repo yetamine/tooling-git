@@ -1,4 +1,4 @@
 *.sh            eol=lf
 *.py            eol=lf
 
-/git-ext-*      eol=lf
+/git-*          eol=lf
